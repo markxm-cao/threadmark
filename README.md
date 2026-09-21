@@ -77,7 +77,7 @@ threadmark/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/markisanidiotttt/threadmark.git
+git clone https://github.com/markxm-cao/threadmark.git
 cd threadmark
 ```
 
@@ -234,6 +234,20 @@ Repository discovery currently recognizes:
 
 AST-aware structural analysis is currently Python-specific.
 
+## Testing
+
+Threadmark includes unit tests for:
+
+- code-aware tokenization
+- fixed-window and AST-aware chunking
+- condition classification
+- structural deduplication motif detection
+
+Run the test suite with:
+
+```bash
+python -m pytest -v
+
 ## Current Limitations
 
 Threadmark is still an experimental project. Current limitations include:
@@ -267,3 +281,4 @@ The central question is:
 > Can structural information extracted from source code help retrieve the implementation a developer is actually asking about?
 
 Threadmark is being built as a practical way to explore that question while developing a repository-aware code question-answering pipeline.
+```

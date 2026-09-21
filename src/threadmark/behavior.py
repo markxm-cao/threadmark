@@ -309,6 +309,10 @@ def extract_repository_behaviors(
 def classify_condition(node: ast.expr) -> str:
     """Normalize common conditional expressions into behavioral operations."""
 
+    if isinstance(node, ast.UnaryOp):
+        if isinstance(node.op, ast.Not):
+            return "negated_predicate"
+
     if isinstance(node, ast.Compare):
         if len(node.ops) == 1:
             operator = node.ops[0]
@@ -320,8 +324,6 @@ def classify_condition(node: ast.expr) -> str:
                 return "non_membership_check"
 
             if isinstance(operator, ast.Eq):
-                # Detect patterns such as:
-                # counter % interval == 0
                 if (
                     isinstance(node.left, ast.BinOp)
                     and isinstance(node.left.op, ast.Mod)
@@ -332,10 +334,6 @@ def classify_condition(node: ast.expr) -> str:
 
             if isinstance(operator, ast.NotEq):
                 return "inequality_check"
-            
-            if isinstance(node, ast.UnaryOp):
-                if isinstance(node.op, ast.Not):
-                    return "negated_predicate"
 
     return "condition"
 

@@ -1,6 +1,8 @@
 import ast
 from dataclasses import dataclass
 
+from threadmark.chunking import CodeChunk
+
 
 COLLECTION_MUTATIONS = {
     "add",
