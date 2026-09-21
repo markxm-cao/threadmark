@@ -53,22 +53,17 @@ At a high level, Threadmark processes a repository in several stages:
 ```text
 threadmark/
 ├── eval/
-│   └── query_plans.json
 ├── src/
 │   └── threadmark/
-│       ├── behavior.py
-│       ├── behavior_categories.py
-│       ├── chunking.py
-│       ├── control_flow.py
-│       ├── evaluation.py
-│       ├── freeze_query_plans.py
-│       ├── generation.py
-│       ├── query_planner.py
-│       ├── repository.py
-│       ├── retrieval.py
-│       └── structural_retrieval.py
+├── tests/
+│   ├── test_behavior.py
+│   ├── test_chunking.py
+│   ├── test_control_flow.py
+│   └── test_retrieval.py
 ├── .gitignore
+├── pytest.ini
 ├── README.md
+├── requirements-dev.txt
 └── requirements.txt
 ```
 
@@ -243,10 +238,10 @@ Threadmark includes unit tests for:
 - condition classification
 - structural deduplication motif detection
 
-Run the test suite with:
+Install the development dependencies:
 
 ```bash
-python -m pytest -v
+python -m pip install -r requirements-dev.txt
 
 ## Current Limitations
 
