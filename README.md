@@ -242,6 +242,7 @@ Install the development dependencies:
 
 ```bash
 python -m pip install -r requirements-dev.txt
+```
 
 ## Current Limitations
 
@@ -276,4 +277,7 @@ The central question is:
 > Can structural information extracted from source code help retrieve the implementation a developer is actually asking about?
 
 Threadmark is being built as a practical way to explore that question while developing a repository-aware code question-answering pipeline.
+
+```
+
 ```
