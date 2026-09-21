@@ -3,6 +3,14 @@ from dataclasses import dataclass
 from sentence_transformers import SentenceTransformer
 from threadmark.chunking import CodeChunk
 from threadmark.behavior import BehaviorFact
+from threadmark.control_flow import (
+    CodeMotif,
+    extract_chunk_motifs,
+)
+from threadmark.repository import (
+    find_source_files,
+    read_source_file,
+)
 
 
 CONCEPT_MODEL_NAME = "all-MiniLM-L6-v2"
@@ -431,6 +439,158 @@ def compute_concept_scores(
     return chunk_behavior_embeddings @ concept_embedding
 
 
+def build_source_cache(
+    repo_path: str,
+) -> dict[str, str]:
+    """Load Python source files once for motif extraction."""
+
+    source_cache = {}
+
+    for file_path in find_source_files(repo_path):
+        if not file_path.endswith(".py"):
+            continue
+
+        lines = read_source_file(
+            repo_path,
+            file_path,
+        )
+
+        source_cache[file_path] = "\n".join(
+            line
+            for _, line in lines
+        )
+
+    return source_cache
+
+
+def extract_repository_chunk_motifs(
+    chunks: list[CodeChunk],
+    source_cache: dict[str, str],
+) -> dict[tuple[str, int, int], list[CodeMotif]]:
+    """Extract supported motifs for every candidate chunk."""
+
+    motifs_by_chunk = {}
+
+    for chunk in chunks:
+        source = source_cache.get(
+            chunk.file_path
+        )
+
+        if source is None:
+            motifs = []
+        else:
+            motifs = extract_chunk_motifs(
+                chunk,
+                source,
+            )
+
+        key = (
+            chunk.file_path,
+            chunk.start_line,
+            chunk.end_line,
+        )
+
+        motifs_by_chunk[key] = motifs
+
+    return motifs_by_chunk
+
+
+def build_motif_text(
+    motif: CodeMotif,
+) -> str:
+    """Build a semantic representation of a code motif."""
+
+    readable_kind = motif.kind.replace(
+        "_",
+        " ",
+    )
+
+    return (
+        f"Behavior pattern: {readable_kind}\n"
+        f"{motif.detail}"
+    )
+
+
+def build_motif_query_text(
+    query: str,
+    plan: QueryPlan,
+) -> str:
+    """Build semantic query text for motif matching."""
+
+    concepts = "\n".join(
+        plan.concepts
+    )
+
+    return (
+        f"Question: {query}\n"
+        f"Intent: {plan.intent}\n"
+        f"Concepts:\n{concepts}"
+    )
+
+
+def embed_repository_motifs(
+    motifs_by_chunk,
+    model: SentenceTransformer,
+):
+    """Embed canonical motif descriptions for each chunk."""
+
+    embeddings_by_chunk = {}
+
+    for key, motifs in motifs_by_chunk.items():
+        if not motifs:
+            continue
+
+        texts = [
+            build_motif_text(motif)
+            for motif in motifs
+        ]
+
+        embeddings_by_chunk[key] = model.encode(
+            texts,
+            normalize_embeddings=True,
+        )
+
+    return embeddings_by_chunk
+
+
+def compute_motif_score(
+    query: str,
+    plan: QueryPlan,
+    chunk_key,
+    motif_embeddings_by_chunk,
+    model: SentenceTransformer,
+) -> float:
+    """Return the best semantic match between the query and a chunk motif."""
+
+    motif_embeddings = (
+        motif_embeddings_by_chunk.get(
+            chunk_key
+        )
+    )
+
+    if motif_embeddings is None:
+        return 0.0
+
+    query_text = build_motif_query_text(
+        query,
+        plan,
+    )
+
+    query_embedding = model.encode(
+        query_text,
+        normalize_embeddings=True,
+    )
+
+    scores = (
+        motif_embeddings
+        @ query_embedding
+    )
+
+    return float(scores.max())
+
+
+
+
 
 # PYTHONPATH=src python -m threadmark.structural_retrieval
 from threadmark.repository import clone_repository
@@ -454,14 +614,34 @@ if __name__ == "__main__":
 
     chunks = chunk_repository_ast(repo_path)
     facts = extract_repository_behaviors(repo_path)
+    source_cache = build_source_cache(
+        repo_path   
+    )
+
     concept_model = SentenceTransformer(
         CONCEPT_MODEL_NAME
     )
+    
+    motifs_by_chunk = (
+        extract_repository_chunk_motifs(
+            chunks,
+            source_cache,
+        )
+    )
+    
+    motif_embeddings_by_chunk = (
+        embed_repository_motifs(
+            motifs_by_chunk,
+            concept_model,
+        )
+    )
+        
     chunk_behavior_embeddings = embed_chunk_behavior_texts(
         chunks,
         facts,
         concept_model,
     )
+    
     behavior_weights = compute_behavior_weights(
         chunks,
         facts,
@@ -515,20 +695,40 @@ if __name__ == "__main__":
             start=1,
         ):
             chunk = result.chunk
-
-            relation_score, matched_relations = (
-                score_chunk_relations(
-                    chunk,
-                    facts,
-                    plan.likely_relations,
-                )
+            
+            chunk_key = (
+                chunk.file_path,
+                chunk.start_line,
+                chunk.end_line,
             )
-
+            
+            motifs = motifs_by_chunk.get(
+                            chunk_key,
+                            [],
+                        )
+            
+            relation_score, matched_relations = (
+                            score_chunk_relations(
+                                chunk,
+                                facts,
+                                plan.likely_relations,
+                            )
+                        )
+            
             chunk_index = chunks.index(chunk)
+                        
             concept_score = float(
                 concept_scores[chunk_index]
             )
-
+            
+            motif_score = compute_motif_score(
+                query,
+                plan,
+                chunk_key,
+                motif_embeddings_by_chunk,
+                concept_model,
+            )
+        
             print(
                 f"\nRank {rank} | "
                 f"Score {result.score:.3f}"
@@ -537,7 +737,8 @@ if __name__ == "__main__":
             print(
                 f"Behavior: {result.behavior_score:.3f} | "
                 f"Relation: {relation_score:.3f} | "
-                f"Concept: {concept_score:.3f}"
+                f"Concept: {concept_score:.3f} | "
+                f"Motif: {motif_score:.3f}"
             )
 
             print(
@@ -558,6 +759,15 @@ if __name__ == "__main__":
                         f"  {relation.source}"
                         f" -> "
                         f"{relation.target}"
+                    )
+                    
+            if motifs:
+                print("Motifs:")
+
+                for motif in motifs:
+                    print(
+                        f"  {motif.kind}: "
+                        f"{motif.detail}"
                     )
             
     interesting_ranges = [
